@@ -1,0 +1,281 @@
+---
+title: 'Functions & Properties of Upper Palaeolithic Cave Art: Analysis og Experimental
+  Data'
+author: "Lærke Brædder"
+date: "2024-05-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Loading libraries}
+pacman::p_load(tiyverse, 
+               dplyr, 
+               ggplot2, 
+               tidyr, 
+               lmerTest,
+               brms,
+               patchwork,
+               interactions,
+               bayesplot)
+```
+
+```{r Loading data and final preparations}
+d <- read.csv("df.csv")
+
+
+### ELONGATING ###
+# Reshape the dataframe from wide to long format
+df <- d %>%
+  pivot_longer(cols = c(head, torso, legs), names_to = "AOI", values_to = "Points")
+
+
+### OUTLIER REMOVAL ###
+# Define lower and upper bounds (3 standard deviations from the mean)
+lower_bound <- mean(df$Points) - 3 * sd(df$Points)
+upper_bound <- mean(df$Points) + 3 * sd(df$Points)
+
+# Remove outliers
+df_filtered <- df %>%
+  filter(Points >= lower_bound & Points <= upper_bound)
+```
+Everything else involved in the data cleaning can be found in the file "data_cleaning.Rmd"
+
+
+###### DATA VISUALIZATION ######
+
+```{r Plotting points by condition}
+ggplot(df, aes(x = Condition, y = Points, fill = Condition)) +
+  scale_fill_manual(values=c("pink", "turquoise", "lightblue")) + 
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Boxplot of Points by Condition",
+       x = "Condition",
+       y = "Points") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+```
+
+
+```{r Plotting, before and after outlier removal}
+ggplot(df, aes(x = Condition, y = Points, fill = AOI)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Boxplot of Points by Condition grouped by AOI, before outlier removal",
+       x = "Condition",
+       y = "Points") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+
+ggplot(df_filtered, aes(x = Condition, y = Points, fill = AOI)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Visual Complexity in the Three AOIs by Condition",
+       x = "Condition",
+       y = "Points") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+
+```
+
+```{r}
+df <- df_filtered
+```
+
+
+###### MODELLING ######
+
+Formula   =   Points ~ 0 + AOI:Condition + (1 | Prolific.ID) + (1 | Stim.img)
+Family    =   negbinom()
+Priors    =   normal(0, 6) for betas and normal(0, 1) for SD
+
+```{r Model specifications}
+CHAINS = 3
+WARMUP = 1000
+ITER = 4000
+CONTROLS = list(
+  max_treedepth = 20,
+  adapt_delta=0.999
+  )
+```
+
+```{r Checking response variable}
+## CHECKING THE DISTRIBUTION OF MY RESPONSE VARIABLE (POINTS)
+plot(density(df$Points), main = "Density Plot of Outcome Variable") # Very clearly a Poisson distribution.
+mean(df$Points)
+sd(df$Points)
+```
+
+```{r Model formula}
+# DEFINING THE MODEL FORMULA
+f <- bf(Points ~ 0 + Condition:AOI + (1 | Prolific.ID) + (1 | Stim.img))
+
+get_prior(f, df)
+
+# SETTING THE PRIORS
+priors <- c(
+  prior(normal(0, 6), class = "b"),
+  prior(normal(0, 1), class = "sd")
+  )
+```
+
+```{r Prior model}
+# PRIOR MODEL
+m_prior <- brm(formula = f,
+                family = negbinomial(),
+                data = df,
+                prior = priors,
+                sample_prior = "only",
+                chains = CHAINS,
+                cores = CHAINS,
+                warmup = WARMUP,
+                iter = ITER,
+                control = CONTROLS)
+pp_check(m_prior, ndraws = 100)
+```
+
+```{r Posterior model}
+m <- brm(f,
+          family = negbinomial(),
+          data = df,
+          prior = priors,
+          chains = CHAINS,
+          cores = CHAINS,
+          warmup = WARMUP,
+          iter = ITER,
+          control = CONTROLS)
+# Save the brms model
+saveRDS(m, file = "models/model.rds")
+
+pp_check(m, nsamples = 100)
+plot(m)
+```
+
+
+```{r}
+m <- readRDS("models/model.rds")
+```
+
+
+
+###### VISUALISING MODEL OUTPUT ######
+
+```{r Summary}
+summary(m)
+```
+
+```{r PLOTTING CREDIBLE INTERVALS NICELY}
+# Create a plot of marginal effects with credible intervals
+plot_data <- marginal_effects(m)
+
+# Plot the marginal effects
+plot(plot_data)
+```
+
+```{r Plotting credible intervals}
+# Extract posterior samples
+posterior_samples <- posterior_samples(m)
+
+# Extract posterior samples for the parameters of interest
+posterior_samples_df <- as.data.frame(posterior_samples)
+
+# Define parameters of interest
+parameters_of_interest <- c("b_Conditionaesthetic:AOIhead",                         
+                            "b_Conditionnarrative:AOIhead",
+                            "b_Conditionspecies_recognition:AOIhead",
+                            "b_Conditionaesthetic:AOIlegs",
+                            "b_Conditionnarrative:AOIlegs",
+                            "b_Conditionspecies_recognition:AOIlegs",
+                            "b_Conditionaesthetic:AOItorso",
+                            "b_Conditionnarrative:AOItorso",
+                            "b_Conditionspecies_recognition:AOItorso",
+                            "sd_Prolific.ID__Intercept",
+                            "sd_Stim.img__Intercept")
+
+# Create a new data frame for parameter names
+parameter_names <- data.frame(name = parameters_of_interest)
+
+# Reshape posterior samples data for plotting
+posterior_samples_df_long <- posterior_samples_df %>%
+  tidyr::pivot_longer(cols = all_of(parameters_of_interest))
+
+# Calculate means for each parameter
+means <- posterior_samples_df_long %>%
+  group_by(name) %>%
+  summarise(mean_value = mean(value))
+
+# Create the plot
+ggplot() +
+  geom_violin(data = posterior_samples_df_long, aes(x = name, y = value), scale = "width", trim = FALSE) +
+  geom_point(data = means, aes(x = name, y = mean_value), color = "pink", size = 2) +
+  coord_flip() +
+  labs(y = "Parameter Value") +
+  ggtitle("Posterior Credible Intervals for Model Parameters") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face = "bold", size = 15, margin = margin(b = 20)))
+```
+
+```{r Plot model}
+# Plot the interaction effect
+plot <- cat_plot(m, pred = Condition, modx = AOI, interval = TRUE)
+
+plot +
+  labs(title = "Interaction between AOI and Condition",
+       x = "Condition",
+       y = "Points") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+  
+```
+
+
+
+### HYPOTHESIS TESTING ###
+
+```{r}
+hypotheses <- c(
+  #H1a
+  "(abs(Conditionaesthetic:AOIlegs - Conditionaesthetic:AOItorso) +
+  abs(Conditionaesthetic:AOIlegs - Conditionaesthetic:AOIhead)  +
+  abs(Conditionaesthetic:AOItorso - Conditionaesthetic:AOIhead))/3 <
+  (abs(Conditionnarrative:AOIlegs - Conditionnarrative:AOItorso) +
+  abs(Conditionnarrative:AOIlegs - Conditionnarrative:AOIhead)  +
+  abs(Conditionnarrative:AOItorso - Conditionnarrative:AOIhead))/3",
+  
+  "(abs(Conditionaesthetic:AOIlegs - Conditionaesthetic:AOItorso) +
+  abs(Conditionaesthetic:AOIlegs - Conditionaesthetic:AOIhead)  +
+  abs(Conditionaesthetic:AOItorso - Conditionaesthetic:AOIhead))/3 <
+  (abs(Conditionspecies_recognition:AOIlegs - Conditionspecies_recognition:AOItorso) +
+  abs(Conditionspecies_recognition:AOIlegs - Conditionspecies_recognition:AOIhead)  +
+  abs(Conditionspecies_recognition:AOItorso - Conditionspecies_recognition:AOIhead))/3",
+  
+  #H1b
+  "(Conditionaesthetic:AOIhead + Conditionaesthetic:AOItorso + Conditionaesthetic:AOIlegs) > ((Conditionnarrative:AOIhead + Conditionnarrative:AOItorso + Conditionnarrative:AOIlegs) + (Conditionspecies_recognition:AOIhead + Conditionspecies_recognition:AOItorso + Conditionspecies_recognition:AOIlegs))/2",
+  
+  "(Conditionaesthetic:AOIhead + Conditionaesthetic:AOItorso + Conditionaesthetic:AOIlegs) > (Conditionnarrative:AOIhead + Conditionnarrative:AOItorso + Conditionnarrative:AOIlegs)",
+  
+  "(Conditionaesthetic:AOIhead + Conditionaesthetic:AOItorso + Conditionaesthetic:AOIlegs) > (Conditionspecies_recognition:AOIhead + Conditionspecies_recognition:AOItorso + Conditionspecies_recognition:AOIlegs)",
+  
+  #H2
+  "Conditionnarrative:AOIlegs > (Conditionspecies_recognition:AOIlegs+Conditionaesthetic:AOIlegs)/2",
+  "Conditionnarrative:AOIlegs > Conditionspecies_recognition:AOIlegs",
+  "Conditionnarrative:AOIlegs > Conditionaesthetic:AOIlegs",
+  
+  #H3
+  "Conditionspecies_recognition:AOIhead > (Conditionnarrative:AOIhead+Conditionaesthetic:AOIhead)/2",
+  "Conditionspecies_recognition:AOIhead > Conditionnarrative:AOIhead",
+  "Conditionspecies_recognition:AOIhead > Conditionaesthetic:AOIhead"
+)
+
+hypothesis(m, hypotheses)
+```
+
+

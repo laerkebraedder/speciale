@@ -1,0 +1,365 @@
+---
+title: "data_cleaning"
+author: "Lærke Brædder"
+date: "2024-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r Loading libraries}
+# Libraries
+pacman::p_load(tiyverse, 
+               dplyr, 
+               ggplot2, 
+               tidyr)
+```
+
+
+
+
+
+The original data set included a total of 846 completed trials from 53 participants. Out of those drawings from accepted participants, a total of 814 drawings trials contained drawing data; 32 trials were drawings that were either empty or unrecognizable as animals, and these were excluded from the analysis.
+After cleaning and combining data, we are at 735 drawings total. Some drawings were not excluded immediately because they did contain points, the points had just not been annotated, because they were sqribbles (or invisible??)
+
+```{r LOOKING AT THE ORIGINAL DATASET BEFORE ANNOTATION}
+## ORIGINAL DATA (956 trials from 89 participants)
+d <- read.csv("data/animalfeatures_2024-04-26_points.csv")
+
+d_agg <- d %>%
+  group_by(prolific_id, trial) %>%
+  summarise(Count = n()) %>%
+  ungroup()
+
+n_distinct(d$prolific_id)
+
+## REMOVING REJECTED PARTICIPANTS (846 trials from 53 participants)
+d_1 <- d[d$prolific_id %in% participants_list, ]
+
+d_agg_1 <- d_1 %>%
+  group_by(prolific_id, trial) %>%
+  summarise(Count = n()) %>%
+  ungroup()
+
+n_distinct(d_1$prolific_id)
+```
+
+
+
+
+## BEFORE DATA ANNOTATION
+The following chunk was executed before data annotation on the elongated dataframe. The dataset contains a lot of drawings from participants who were not approved, either because they didn't finish the study or because they didn't fulfill the task. The participant_list contains the approved participants who received payment.
+```{r Subsetting only the approved participants}
+# Loading the points data
+animalfeat <- read.csv("data/animalfeatures_2024-04-26_points.csv")
+
+n_distinct(animalfeat$prolific_id)
+
+# Listing the approved participants
+participants_list <- c("61657b7fc08306b12b722115",
+                       "6004290f2fe8805383395886",
+                       "5c3f8bdf342ae0000111a3e1",
+                       "65ae8520028238caca8c4082",
+                       "6165ee51589a30c811a48217",
+                       "615c12b7b396c74155dc2185",
+                       "613a98f9098c4cfe776b69d1",
+                       "61320a26c3013321c8d54600",
+                       "6586e5f59b65330608147376",
+                       "5daec9633990ed0014564662",
+                       "60cfa6210e878af05a089060",
+                       "5edad7d6f848291823c5f99c",
+                       "56ebadebcdfa81000d9e2b67",
+                       "65de0a72fbc3bd908e63fbe5",
+                       "60d1c40555cffd8ba5a3587e",
+                       "609ea6976e377c8f9f77759a",
+                       "616c5387784afe4b70a34de7",
+                       "5e5ba8c45cd2ad38c93ca999",
+                       "65a53f52a8e15bf1de72f9fe",
+                       "5fb3fcb82df261033a5f6e0e",
+                       "612d16ff90c1ff5cff902e18",
+                       "612b3134d6e373bd9f73afbf",
+                       "61574e3de0229e6bb92368c2",
+                       "5c53ef4f26a39500019719b4",
+                       "657bd47cdd8ce6a5aadd4c69",
+                       "603cd9dda3d28fac931d45e5",
+                       "611c5d79bfc8b929093b0506",
+                       "5e9f3b738bee310bed8379ad",
+                       "65e48bfb93915b354fa3b66b",
+                       "5fda95fd9df7fa2b164bed61",
+                       "65ddec4ce8c0b18582e05517",
+                       "5f2efac9dc9a4e2be539b5d5",
+                       "5fa670417aaa09285126c6b9",
+                       "5ba8cac81299c60001e6701d",
+                       "6564a1d715b194ac6466d177",
+                       "60d9dfd4dcc09cf57dc92cb1",
+                       "65b26a0d5ae1ede0b3be4248",
+                       "616845bb92b48e8c6a18a84a",
+                       "613ef4d99993c6d01d3eb04a",
+                       "64c8eb1ac199f433b0db2ab5",
+                       "659570316debdec4ed9f663e",
+                       "611e20464a435b1b494f042d",
+                       "648868e5d8e551227bf5da02",
+                       "651c425a4fd558465d846c57",
+                       "614775c6f329a9e5ab190e04",
+                       "602afb82e999ac1f112e7d5f",
+                       "656700a9c53734f641fea858",
+                       "612f100e6abefeac4f3d4cd0",
+                       "6580e5dfdc7fc94823610ef5",
+                       "6621503c947e5e6fe7830f1e",
+                       "6614daf007670261189c3e8a",
+                       "5fa94ee12438bf08ad45f75f",
+                       "6509afd5de37875b4dbed467")
+
+# Subsetting the data
+subset <- animalfeat[animalfeat$prolific_id %in% participants_list, ]
+
+# Checking if the number of IDs corresponds to the number of approved subjects
+n_distinct(subset$prolific_id)
+
+# Writing the csv file that will be used in the data annotation program
+write.csv(subset, "data/animalfeatures_2024-04-26_points.csv")
+```
+
+
+
+
+## AFTER DATA ANNOTATION: COMBINING DATA FILES
+The data was annotated on two different computers, and there are two files from each computer respectively, because the annotation program was slightly altered midway through the annotation process. Here, we combine the four files into one large dataset.
+```{r Combining annotation subsets}
+# The directory of the subset files
+filePaths1 <- list.files("data/points_data/", "\\.csv$", full.names = TRUE)
+
+
+# List to store dataframes
+df_list <- list()
+
+# Loop over files
+for (file in filePaths1) {
+  # Read CSV file
+  df <- read.csv(file)
+  # Store dataframe in the list
+  df_list[[file]] <- df
+}
+
+# Removing participants with no annotations in each dataframe
+for (i in seq_along(df_list)) {
+  df_list[[i]] <- df_list[[i]] %>%
+    group_by(Prolific.ID) %>%
+    filter(any(AOI != ""))
+}
+
+# Combining them
+dfs <- do.call(rbind, df_list)
+
+
+## CHECKS
+
+# Checking to see if the dataframe contains the correct number of participants
+length(unique(dfs$Prolific.ID)) # Looks good - there should be 53
+
+# Check if each participant has exactly 16 trials
+dfs %>%
+  group_by(Prolific.ID) %>%
+  #summarise(max(Trial))
+  summarise(length(unique(Trial)))
+
+# Transforming blank data into NAs
+dfs <- dfs %>%mutate(AOI = na_if(AOI, ""))
+
+# Write the cbinded csvs into one big df
+write.csv(dfs, "data/animalfeatures_aois_out.csv")
+```
+
+
+
+
+## Creating the modelling dataset
+```{r Loading the annotated data}
+# Loading the data
+d_AOIs <- read.csv("data/animalfeatures_aois_out.csv")
+
+# Little check
+trials <- d_AOIs %>%
+  group_by(Prolific.ID) %>%
+  summarise(trials = length(unique(Trial)))
+approved_drawings <- sum(trials$trials) # We should have a total of 814 approved drawings
+rejected_drawings <- 53*16 - sum(trials$trials) # Which means that 34 drawings were rejected in the annotation process (But two participants only submitted 15 drawings, so really it is 32). This was due to them being either blank or unrecognizable as animals. 
+```
+
+
+```{r Aggregating}
+# Group by Prolific.ID, Trial, and AOI, then count occurrences
+d_AOIs_agg <- d_AOIs %>%
+  group_by(Prolific.ID, Trial, AOI) %>%
+  summarise(Count = n()) %>%
+  ungroup()
+
+# Spread the AOI values to columns, fill missing values with 0
+d_AOIs_agg <- spread(d_AOIs_agg, key = AOI, value = Count, fill = 0)
+```
+
+
+
+## DEMOGRAPHIC ANALYSIS
+
+# Loading data
+```{r Loading original files}
+# Loading the original logfiles
+d_log <- read.csv("data/animalfeatures_2024-04-26.csv")
+
+# checking the variables
+colnames(d_log) # We could use the variables Age, Nationality / Language, Sex, Time.taken, and of course Participant.id to match the cols.
+
+# Subsetting useful variables
+d_log <- d_log %>% select(
+  Condition = condition,
+  Prolific.ID = prolific_id,
+  Trial = trial,
+  Animal = animal,
+  Action = action,
+  Stim.img = stim_img,
+  Drawing.time = drawing_time,
+  Device = device,
+  Window.height = window_height,
+  Window.width = window_width,
+  Drawing.skills = drawing_skills
+)
+
+d_log <- d_log %>% mutate(
+  Drawing.skills2 = as.integer(
+    recode(Drawing.skills,
+           "Way below average" = 1,
+           "A bit below average" = 2,
+           "Average" = 3,
+           "A bit above average" = 4,
+           "Way above average" = 5)
+  )
+)
+
+# Removing revoked and rejected participants
+d_log <- d_log[d_log$Prolific.ID %in% participants_list, ]
+```
+
+```{r Loading demographic data}
+## Loading the demographic data
+d_demo <- read.csv("data/prolific_demographics.csv")
+
+# checking the variables
+colnames(d_demo) # We could use the variables Age, Nationality / Language, Sex, Time.taken, and of course Participant.id to match the cols.
+
+# Subsetting useful variables
+d_demo <- d_demo %>% select(
+  Age = Age,
+  Nationality = Nationality,
+  Sex = Sex,
+  Time.taken = Time.taken,
+  Prolific.ID = Participant.id
+)
+
+# Removing revoked and rejected participants
+d_demo <- d_demo[d_demo$Prolific.ID %in% participants_list, ]
+
+d_demo$Age <- as.numeric(d_demo$Age)
+```
+
+```{r Combining demographic data frame}
+# Subset the larger dataframe to match the rows of the short dataframe
+sub_log <- d_log %>% filter(Trial == 1)
+df_demo <- merge(d_demo, sub_log, by = "Prolific.ID")
+```
+
+
+
+
+# Analyses
+```{r Demographics: CONDITIONS and SEX}
+table(df_demo$Condition)
+
+table(df_demo$Condition, df_demo$Sex)
+```
+
+```{r Demographics: AGE, TIME TAKEN}
+## AGE
+
+# Custom function to compute mean and standard deviation
+mean_sd <- function(x) {
+  c(mean = mean(x), sd = sd(x))
+}
+
+# Aggregate mean and standard deviation of 'age' and 'time_taken' by 'condition'
+agg_result <- aggregate(cbind(Age, Time.taken) ~ Condition, df_demo, FUN = mean)
+
+# Mean AND sd for the numbers
+df_demo %>% group_by(Condition) %>% summarise_each(funs(mean, sd), c(Age, Time.taken))
+```
+
+```{r Nationality distributions}
+ggplot(df_demo, aes(x = Condition, fill = Nationality)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribution of Participant Nationalities by Condition",
+       x = "Condition", y = "Proportion") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+```
+
+```{r Drawing skills distribution in the three conditions}
+
+# DENSITY DISTRIBUTIONS
+ggplot(df_demo, aes(x = Drawing.skills2, color = Condition, fill = Condition)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Grouped Distribution of Drawing Skills Ratings by Condition",
+       x = "Drawing Skills Rating",
+       y = "Density") +
+  theme_minimal() +
+  theme(text = element_text(family = "Times New Roman"),
+        plot.title = element_text(face="bold", size = 15, margin = margin(b = 20)))
+
+```
+
+
+
+
+## MODELLING
+
+# Final data preparations
+```{r Combining modelling data frame}
+# Perform a conditional left join based on Prolific.ID
+df <- merge(d_AOIs_agg, d_demo, by = "Prolific.ID", all.x = TRUE)
+df <- merge(df, d_log, by = c("Prolific.ID", "Trial"), all.x = TRUE)
+```
+
+```{r Removing empty drawings}
+df <- df %>% 
+  filter(head != 0 &
+           legs != 0 &
+           torso != 0)
+```
+
+```{r}
+write.csv(df, "data/df.csv")
+```
+
+
+
+
+
+
+```{r}
+df <- read.csv("data/df.csv")
+```
+
+```{r Elongating dataframe}
+# Reshape the dataframe from wide to long format
+df_long <- df %>%
+  pivot_longer(cols = c(head, torso, legs), names_to = "AOI", values_to = "Points")
+```
+
+
+
+
+
